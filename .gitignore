@@ -1,0 +1,11 @@
+// env
+.env
+
+// storage
+.storage
+.cache
+
+
+// :)
+
+// Write you're own customize gitignore if you have a sensitive data or credential :)
