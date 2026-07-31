@@ -1,0 +1,161 @@
+ZHC Project — AI Security Vulnerability Testing Orchestrator
+
+ZHC-Project is a modern, AI-assisted vulnerability assessment and penetration testing tool. The system leverages the Model Context Protocol (MCP) to connect a Large Language Model (LLM) with an isolated execution environment running inside a QEMU/KVM Virtual Machine.
+System Architecture
+ZHC strictly separates the Control Plane (Host OS) and the Execution Plane (Isolated Guest VM) for maximum safety and security:
+Plaintext
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           HOST ENVIRONMENT (Main Linux)                         │
+│                                                                                 │
+│  ┌───────────────────────┐                    ┌──────────────────────────────┐  │
+│  │ User UI / CLI         │ ◄─── (VNC / SPICE) ┤ QEMU Display / SPICE Server │  │
+│  └───────────┬───────────┘                    └──────────────▲───────────────┘  │
+│              │ Interaction/Task                              │                  │
+│              ▼                                               │ Display Output   │
+│  ┌───────────────────────┐                    ┌──────────────┴───────────────┐  │
+│  │  Orchestrator Core    │                    │     QEMU / KVM Hypervisor    │  │
+│  │  ├── LLM Router       │                    │  ┌────────────────────────┐  │  │
+│  │  │   (Ollama / Cloud) │                    │  │   Target VM (Kali OS)  │  │  │
+│  │  └── Libvirt Controller                    │  │                        │  │  │
+│  └───────────┬───────────┘                    │  │  ┌──────────────────┐  │  │  │
+│              │ Command / JSON-RPC             │  │  │ MCP Guest Daemon │  │  │  │
+│              └─────────────── SSH / Socket ───┼─►│  └─────────┬────────┘  │  │  │
+│                                               │  │            │ Exec      │  │  │
+│                                               │  │            ▼           │  │  │
+│                                               │  │   [ Pentest Tools ]    │  │  │
+│                                               │  └────────────────────────┘  │  │
+│                                               └──────────────┬───────────────┘  │
+└──────────────────────────────────────────────────────────────┼──────────────────┘
+                                                               │ Security Traffic
+                                                               ▼
+                                                     Target Application / Network
+
+Key Highlights
+
+    Hypervisor Isolation (QEMU/KVM): All security tools (nmap, ffuf, gobuster, etc.) execute inside the Guest VM (Kali/Parrot Linux). Your host OS remains 100% safe from target payload execution or potential RCE backfires.
+
+    Copy-On-Write (QCOW2 Overlay): The VM uses a ephemeral overlay disk built on top of a base image. Resetting the VM to a clean state takes only milliseconds.
+
+    Live Visual Agent: The VM screen is streamed in real-time via SPICE/VNC viewer, allowing you to watch the AI navigate and execute tools on the Linux desktop.
+
+    Flexible LLM Provider: Supports Local LLMs (Ollama: qwen2.5-coder, llama3.1) for complete privacy and offline usage, as well as Cloud LLMs (Claude 3.5 Sonnet / OpenAI) for complex reasoning.
+
+    OS & Tool Detection: The Guest Daemon reads /etc/os-release and automatically recommends apt install commands if a tool requested by the AI is missing.
+
+Project Structure
+Plaintext
+
+ZHC-project/
+├── cmd/
+│   ├── orchestrator/          # Host Application Entrypoint (Orchestrator & LLM Control)
+│   │   └── main.go
+│   └── mcp-guest-daemon/      # MCP Daemon Entrypoint (Runs inside the QEMU VM)
+│       └── main.go
+│
+├── config/
+│   └── config.example.yaml    # Configuration Template (Ollama URL, Cloud API Keys, Libvirt paths)
+│
+├── deployments/
+│   ├── qemu/                  # Libvirt XML Templates & Setup Shell scripts
+│   │   ├── vm-config.xml
+│   │   └── init-guest.sh
+│   └── docker/                # Supporting container configurations
+│
+├── internal/
+│   ├── host/                  # Host Engine Specific Modules
+│   │   ├── llm/               # AI Provider Adapters (Ollama, Claude, OpenAI)
+│   │   ├── transport/         # Socket/SSH Bridge (Host <-> Guest VM)
+│   │   └── vm/                # Libvirt/QEMU Lifecycle Manager & VNC Launcher
+│   │
+│   ├── guest/                 # Guest VM Engine Specific Modules
+│   │   ├── exec/              # Subprocess Runner & Argument Sanitizer
+│   │   ├── mcp/               # MCP Server & Tool Wrappers (Nmap, Ffuf, etc.)
+│   │   ├── osdetect/          # Linux Distro Detector & Dynamic Tool Checker
+│   │   └── shared/            # Protocol & Struct Definitions for JSON-RPC
+│
+├── go.mod
+├── go.sum
+└── README.md
+
+ Prerequisites
+On Host Machine (Linux):
+
+    Go: v1.22 or newer
+
+    QEMU / KVM & Libvirt: qemu-kvm, libvirt-daemon-system, virsh
+
+    Display Viewer: remote-viewer (virt-viewer) or SPICE client
+
+    Ollama (Optional for Local LLM): Running on http://localhost:11434
+
+On Guest VM Image:
+
+    Base Image of Kali Linux or Parrot OS (In .qcow2 format)
+
+    Systemd service configured to launch mcp-guest-daemon on boot
+
+ Build & Usage Guide
+1. Build Host & Guest Binaries
+
+Compile the orchestrator binary for the host machine and the daemon for the target VM:
+Bash
+
+# 1. Build Host Orchestrator
+go build -o bin/orchestrator ./cmd/orchestrator
+
+# 2. Build Guest Daemon (Compiled for target Linux x86_64 VM)
+GOOS=linux GOARCH=amd64 go build -o bin/mcp-guest-daemon ./cmd/mcp-guest-daemon
+
+2. Configure Environment
+
+Copy the example configuration file and adjust your settings:
+Bash
+
+cp config/config.example.yaml config/config.yaml
+
+Sample config/config.yaml:
+YAML
+
+llm:
+  provider: "ollama" # Options: "ollama" or "cloud"
+  ollama:
+    base_url: "http://localhost:11434"
+    model: "qwen2.5-coder:14b"
+  cloud:
+    api_key: "YOUR_API_KEY"
+    model: "claude-3-5-sonnet-20241022"
+
+qemu:
+  base_image: "/var/lib/libvirt/images/kali-base.qcow2"
+  overlay_path: "/tmp/zhc-active-session.qcow2"
+  xml_config: "deployments/qemu/vm-config.xml"
+
+3. Launch Orchestrator
+
+Run the Orchestrator on your host machine:
+Bash
+
+./bin/orchestrator --config config/config.yaml
+
+When started:
+
+    QEMU VM boots instantly using a new QCOW2 Overlay.
+
+    VNC/SPICE Viewer opens to render the Guest desktop.
+
+    Host establishes a handshake with the MCP Guest Daemon.
+
+    You can begin issuing vulnerability testing tasks via the Host CLI.
+
+ Security Guardrails
+
+    No Shell Execution (sh -c Avoidance): CLI tools inside the Guest VM are invoked using exec.CommandContext with strict argument arrays to mitigate Command Injection risks.
+
+    Timeout Enforcement: Every tool execution is bound to a hard timeout (default: 5 minutes per tool) to prevent hanging scans.
+
+    Target Scope Verification: Requests processed by the AI are checked against an explicit target allowlist configured at session startup.
+
+ License
+
+This project is licensed under the MIT License. See the LICENSE file for details.
