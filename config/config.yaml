@@ -1,0 +1,21 @@
+llm:
+  provider: "ollama"
+  ollama:
+  baseurl: "http://localhost:11434"
+  model: "qwen2.5-coder:14b"
+  cloud:
+  api_key: ""
+  model: "qwen2.5-coder:14b"
+
+qemu:
+  base: "/var/lib/libvirt/images/kali-base.qcow2"
+  overlay: "/tmp/zhc-active-session.qcow2"
+  xml_config: "deploy/qemu/vm-config.xml"
+
+transport:
+  socket_path: "/tmp/mcp-guest-agent.sock"
+  ssh:
+    host: "localhost"
+    port: 2222
+    user: "root"
+    key_path: "~/.ssh/id_rsa"
