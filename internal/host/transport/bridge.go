@@ -12,6 +12,12 @@ import (
 	"ZHC-project/internal/guest/shared"
 )
 
+type ToolResult struct {
+	Success bool
+	Stdout string
+	Stderr string
+	Error string
+}
  type Bridge struct {
 	socketPath string
 	conn net.Conn
@@ -83,7 +89,7 @@ import (
 
 func (b *Bridge) Initialize(ctx context.Context) error {
 	_, err := b.Call(ctx, "initialize", map[string]interface{}{
-		"protocol_version": "2024-11-05",
+		"protocolVersion": "2024-11-05",
 		"capabilities": map[string]bool{},
 		"clientInfo": map[string]string{
 			"name":    "zhc-orchestrator",
@@ -93,8 +99,8 @@ func (b *Bridge) Initialize(ctx context.Context) error {
 	return err
 }
 
-func (b *Bridge) ListTools(ctx context.Context) ([]shared.ToolCallParams, error) {
-	resp, err := b.Call(ctx, "list/tools", map[string]interface{}{})
+func (b *Bridge) ListTools(ctx context.Context) ([]map[string]interface{}, error) {
+	resp, err := b.Call(ctx, "tools/list", map[string]interface{}{})
 	if err != nil {
 		return nil, err
 	}
@@ -104,30 +110,24 @@ func (b *Bridge) ListTools(ctx context.Context) ([]shared.ToolCallParams, error)
 		return nil, err
 	}
 
-	var tools []shared.ToolCallParams
-	if err := json.Unmarshal(resultBytes, &tools); err != nil {
+	var wrapper struct {
+		Tools []map[string]interface{} `json:"tools"`
+	}
+
+	if err := json.Unmarshal(resultBytes, &wrapper); err != nil {
 		return nil, err
 	}
+	return wrapper.Tools, nil
 
-	return tools, nil
 }
-
-func (b *Bridge) ExecuteTool(ctx context.Context, toolName string, args []string, timeoutSec int) (*shared.ToolCallResult, error) {
+func (b *Bridge) ExecuteTool(ctx context.Context, toolName, target, flags string) (*shared.ToolCallResult, error) {
 	arguments := map[string]interface{}{
 		"tool": toolName,
-		"target": "",
-		"flags": "",
+		"target": target,
+		"flags": flags,
 	}
-
-	if len(args) > 0 {
-		arguments["target"] = args[len(args)-1]
-		if len(args) > 1 {
-			arguments["flags"] = joinArgs(args[:len(args)-1])
-		}
-	}
-
 	resp, err := b.Call(ctx, "tools/call", map[string]interface{}{
-		"tool_name": toolName,
+		"name": toolName,
 		"arguments": arguments,
 	})
 
@@ -146,15 +146,4 @@ func (b *Bridge) ExecuteTool(ctx context.Context, toolName string, args []string
 	}
 
 	return &result, nil
-}
-
-func joinArgs(args []string) string {
-	out := ""
-	for i, a := range args {
-		if i > 0 {
-			out += " "
-		}
-		out += a
-	}
-	return out
 }
