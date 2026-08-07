@@ -1,15 +1,15 @@
 llm:
   provider: "ollama"
   ollama:
-  baseurl: "http://localhost:11434"
-  model: "qwen2.5-coder:14b"
+    base_url: "http://localhost:11434"
+    model: "dolphin-llama3:8b"
   cloud:
-  api_key: ""
-  model: "qwen2.5-coder:14b"
+    api_key: ""
+    model: "claude-3-5-sonnet-20241022"
 
 qemu:
-  base: "/var/lib/libvirt/images/kali-base.qcow2"
-  overlay: "/tmp/zhc-active-session.qcow2"
+  base_image: "/var/lib/libvirt/images/kali-base.qcow2"
+  overlay_path: "/tmp/zhc-active-session.qcow2"
   xml_config: "deploy/qemu/vm-config.xml"
 
 transport:
